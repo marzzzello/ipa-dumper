@@ -44,7 +44,7 @@ class AppleDL:
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
 
-        self.clean = False
+        self.running = True
         self.processes = []
         self.dump_threads = []
         # self.file_dict = {}
@@ -62,12 +62,11 @@ class AppleDL:
             self.cleanup()
             return
 
-        self.init_ssh()
-        self.init_frida()
-        self.init_images()
+        if not self.init_ssh() or not self.init_frida() or not self.init_images():
+            self.cleanup()
 
     def __del__(self):
-        if self.clean is False:
+        if self.running:
             self.cleanup()
 
     def signal_handler(self, signum, frame):
@@ -92,38 +91,48 @@ class AppleDL:
 
         # threads
         for t in threading.enumerate():
-            if t.is_alive():
-                print(f'Running thread: {t.name}')
-        self.clean = True
+            if t.name != 'MainThread' and t.is_alive():
+                self.log.debug(f'Running thread: {t.name}')
+        self.log.debug('Clean up done')
+        self.running = False
 
     def init_ssh(self):
         """
         Initializing SSH connection to device
+        return success
         """
         self.log.debug('Connecting to device via SSH')
         # pkey = paramiko.Ed25519Key.from_private_key_file(self.ssh_key_filename)
         self.sshclient = paramiko.SSHClient()
         # client.load_system_host_keys()
         self.sshclient.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        self.sshclient.connect(
-            'localhost', port=self.local_ssh_port, username='root', key_filename=self.ssh_key_filename
-        )
+        try:
+            self.sshclient.connect(
+                'localhost', port=self.local_ssh_port, username='root', key_filename=self.ssh_key_filename
+            )
+        except FileNotFoundError:
+            self.log.error(f'Could not find ssh keyfile "{self.ssh_key_filename}"')
+            return False
+        return True
 
     def init_frida(self):
         """
         set frida device
+        return success
         """
         device_manager = frida.get_device_manager()
         devices = device_manager.enumerate_devices()
         for device in devices:
             if device.type == 'usb' and device.name == 'iOS Device':
                 self.frida_device = device
-                return
+                return True
         self.log.error('No Frida USB device found')
+        return False
 
     def init_images(self):
         """
         Copy template images from local folder to device
+        return success
         """
         _, _, filenames = next(os.walk(self.image_base_path_local))
         image_names = ['dissallow.png', 'get.png', 'install.png', 'cloud.png', 'open.png']
@@ -131,7 +140,7 @@ class AppleDL:
             self.log.error(f'Image files not found in {self.image_base_path_local}')
             self.log.info(f'Make sure no other files except these images are in the directory: {image_names}')
             self.cleanup()
-            return
+            return False
 
         # folder_name = os.path.basename(self.image_base_path_local)
         # self.image_dir_device = f'{self.image_base_path_device}/{folder_name}'
@@ -170,6 +179,7 @@ class AppleDL:
 
         with SCPClient(self.sshclient.get_transport(), socket_timeout=self.timeout) as scp:
             scp.put(self.image_base_path_local, self.image_base_path_device, recursive=True)
+        return True
 
     def ssh_cmd(self, cmd):
         """
@@ -461,16 +471,20 @@ class AppleDL:
         script.load()
         script.post('dump')
 
+        success = False
         if finished.wait(timeout=timeout):
             generate_ipa()
-        else:
-            self.log.error(f'{target}: Timeout of {timeout}s exceeded')
+            self.log.debug(f'{target}: Dumping finished. Clean up temp dir {temp_dir}')
 
-        self.log.debug(f'{target}: Dumping finished. Clean up temp dir {temp_dir}')
+            success = True
+        else:
+            self.log.error(f'{target}: Timeout of {timeout}s exceeded. Clean up temp dir {temp_dir}')
+
         shutil.rmtree(temp_dir)
 
         if session:
             session.detach()
+        return success
 
     def bulk_decrypt(self, itunes_ids, timeout_per_MiB=0.5, parallel=3, output_directory='ipa_output'):
         """
@@ -507,7 +521,7 @@ class AppleDL:
                     continue
 
                 wait_for_install.append(app)
-                self.install(itunes_id, btn_timeout=self.timeout)
+                self.install(itunes_id)
                 self.log.info(f'{bundleId}: Waiting for download and installation to finish ({fileSizeMiB} MiB)')
             else:
                 # check if an app installation has finished
@@ -595,6 +609,10 @@ class AppleDL:
                         wait_for_dump.remove((app, t))
                         done.append(app)
 
+        for t in self.dump_threads:
+            self.log.debug(f'Found thread {t.name} waiting to finish')
+            t.join()
+
         # timeout = self.timeout + fileSizeMiB * timeout_per_MiB
         # wait_time = 0
         # success = False
@@ -610,7 +628,7 @@ class AppleDL:
         # if success is False:
         #     self.log.warning(f'Exceeded timeout of {timeout}s')
 
-    def install(self, itunes_id, btn_timeout=15):
+    def install(self, itunes_id):
         """
         Opens app in appstore on device and simulates touch input to download and install the app.
         If there is a cloud button then press that and done
@@ -621,7 +639,7 @@ class AppleDL:
 
         self.log.debug(f'ID {itunes_id}: Waiting for get or cloud button to appear')
         dl_btn_wait_time = 0
-        while dl_btn_wait_time <= btn_timeout:
+        while dl_btn_wait_time <= self.timeout:
             dl_btn_wait_time += 1
             time.sleep(1)
             dl_btn_xy = self.match_image('get.png')
@@ -637,15 +655,15 @@ class AppleDL:
                 self.tap(dl_btn_xy, 'get')
                 break
 
-        if dl_btn_wait_time > btn_timeout:
-            self.log.warning(f'ID {itunes_id}: No download button found after {btn_timeout}s')
+        if dl_btn_wait_time > self.timeout:
+            self.log.warning(f'ID {itunes_id}: No download button found after {self.timeout}s')
             return False
 
         # tap and need to wait and confirm with install button
         self.tap(dl_btn_xy, 'load')
         self.log.debug(f'ID {itunes_id}: Waiting for install button to appear')
         install_btn_wait_time = 0
-        while install_btn_wait_time <= btn_timeout:
+        while install_btn_wait_time <= self.timeout:
             install_btn_wait_time += 1
             time.sleep(1)
             install_btn_xy = self.match_image('install.png')
@@ -653,7 +671,7 @@ class AppleDL:
                 self.tap(install_btn_xy, 'install')
                 return True
 
-        self.log.warning(f'ID {itunes_id}: No install button found after {btn_timeout}s')
+        self.log.warning(f'ID {itunes_id}: No install button found after {self.timeout}s')
         return False
 
         # # check for get.png and if not found for cloud.png
@@ -665,7 +683,7 @@ class AppleDL:
 
         #     if dl_btn_xy is False:
         #         # raise Exception('I am stuck')
-        #         self.log.warning(f'ID {itunes_id}: No download button found after {btn_timeout}s')
+        #         self.log.warning(f'ID {itunes_id}: No download button found after {self.timeout}s')
         #         return False
 
         #     else:

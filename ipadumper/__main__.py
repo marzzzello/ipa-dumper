@@ -1,4 +1,4 @@
-from ipadumper.appledl import AppleDL
+from ipadumper.main import main
 
 if __name__ == '__main__':
-    d = AppleDL()
+    main()

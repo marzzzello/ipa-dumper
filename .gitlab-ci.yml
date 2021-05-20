@@ -1,0 +1,12 @@
+stages:
+  - release
+
+pypi_upload:
+  stage: release
+  image: python:latest
+  script:
+    - pip install twine
+    - python setup.py sdist bdist_wheel
+    - python -m twine upload dist/*
+  only:
+    - tags

@@ -95,7 +95,7 @@ def main():
     parser_ssh_cmd.add_argument('command', help='command')
 
     # install
-    d = 'Opens app in appstore on device and simulates touch input to download and install the app'
+    d = 'Opens app in appstore on device and simulates touch input to download and installs the app'
     parser_install = subparsers.add_parser('install', parents=[parent_parser], help=d, description=d, formatter_class=F)
     parser_install.add_argument('itunes_id', help='iTunes ID', type=int)
 
@@ -119,14 +119,14 @@ def main():
 
         print(f'\n\nCommon optional arguments for {", ".join(parentsubparsers_str)}:')
         print('\n'.join(parent_parser.format_help().splitlines()[4:]))
-
+        match = f'(default: {imagedir})'
         for p, p_str in zip(parentsubparsers, parentsubparsers_str):
             h = p.format_help()
             hn = ''
             for line in h.splitlines():
                 add = True
                 for arg in commonargs:
-                    if line.lstrip().startswith(arg):
+                    if line.lstrip().startswith(arg) or (line.lstrip() != '' and line.lstrip() in match):
                         add = False
                 if add:
                     hn += line + '\n'

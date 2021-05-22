@@ -44,9 +44,12 @@ Automatically install apps on a jailbroken device iOS device and generate a decr
 ## Usage
 
 ```
-usage: ipadumper [-h] [-v {warning,info,debug}] {help,usage,itunes_info,bulk_decrypt,dump,ssh_cmd,install} ...
+usage: ipadumper [-h] [-v {warning,info,debug}]
+                 {help,usage,itunes_info,bulk_decrypt,dump,ssh_cmd,install}
+                 ...
 
-Automatically install apps on a jailbroken device iOS device and generate a decrypted ipa packages
+Automatically install apps on a jailbroken device iOS device and generate a
+decrypted ipa packages
 
 positional arguments:
   {help,usage,itunes_info,bulk_decrypt,dump,ssh_cmd,install}
@@ -57,7 +60,8 @@ positional arguments:
     bulk_decrypt        Installs apps, decrypts and uninstalls them
     dump                Decrypts und dumps ipa package
     ssh_cmd             Execute ssh command on device
-    install             Opens app in appstore on device and simulates touch input to download and install the app
+    install             Opens app in appstore on device and simulates touch
+                        input to download and installs the app
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -79,14 +83,21 @@ optional arguments:
 
 
 Common optional arguments for bulk_decrypt, dump, ssh_cmd, install:
+  --device_address HOSTNAME  device address (default: localhost)
   --device_port PORT         device port (default: 22222)
   --ssh_key PATH             Path to ssh keyfile (default: iphone)
-  --imagedir PATH            Path to appstore images (default: $HOME/.local/lib/python3.9/site-packages/ipadumper/appstore_images/dark_de)
+  --imagedir PATH            Path to appstore images (default:
+                             $HOME/.local/lib/python3.9/site-
+                             packages/ipadumper/appstore_images/dark_de)
   --base_timeout SECONDS     Base timeout for various things (default: 15)
 
 
 bulk_decrypt:
-usage: ipadumper bulk_decrypt [-h] [--device_address HOSTNAME] [--device_port PORT] [--ssh_key PATH] [--imagedir PATH] [--base_timeout SECONDS] [--parallel PARALLEL] [--timeout_per_MiB SECONDS]
+usage: ipadumper bulk_decrypt [-h] [--device_address HOSTNAME]
+                              [--device_port PORT] [--ssh_key PATH]
+                              [--imagedir PATH] [--base_timeout SECONDS]
+                              [--parallel PARALLEL]
+                              [--timeout_per_MiB SECONDS]
                               itunes_ids output
 
 Installs apps, decrypts and uninstalls them
@@ -96,12 +107,16 @@ positional arguments:
   output                     Output directory
 
 optional arguments:
-  --parallel PARALLEL        How many apps get installed in parallel (default: 3)
+  --parallel PARALLEL        How many apps get installed in parallel (default:
+                             3)
   --timeout_per_MiB SECONDS  Timeout per MiB (default: 0.5)
 
 
 dump:
-usage: ipadumper dump [-h] [--device_address HOSTNAME] [--device_port PORT] [--ssh_key PATH] [--imagedir PATH] [--base_timeout SECONDS] [--timeout SECONDS] bundleID PATH
+usage: ipadumper dump [-h] [--device_address HOSTNAME] [--device_port PORT]
+                      [--ssh_key PATH] [--imagedir PATH]
+                      [--base_timeout SECONDS] [--timeout SECONDS]
+                      bundleID PATH
 
 Decrypts und dumps ipa package
 
@@ -114,7 +129,10 @@ optional arguments:
 
 
 ssh_cmd:
-usage: ipadumper ssh_cmd [-h] [--device_address HOSTNAME] [--device_port PORT] [--ssh_key PATH] [--imagedir PATH] [--base_timeout SECONDS] command
+usage: ipadumper ssh_cmd [-h] [--device_address HOSTNAME] [--device_port PORT]
+                         [--ssh_key PATH] [--imagedir PATH]
+                         [--base_timeout SECONDS]
+                         command
 
 Execute ssh command on device
 
@@ -123,9 +141,13 @@ positional arguments:
 
 
 install:
-usage: ipadumper install [-h] [--device_address HOSTNAME] [--device_port PORT] [--ssh_key PATH] [--imagedir PATH] [--base_timeout SECONDS] itunes_id
+usage: ipadumper install [-h] [--device_address HOSTNAME] [--device_port PORT]
+                         [--ssh_key PATH] [--imagedir PATH]
+                         [--base_timeout SECONDS]
+                         itunes_id
 
-Opens app in appstore on device and simulates touch input to download and install the app
+Opens app in appstore on device and simulates touch input to download and
+installs the app
 
 positional arguments:
   itunes_id                  iTunes ID

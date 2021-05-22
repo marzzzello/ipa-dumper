@@ -324,10 +324,6 @@ class AppleDL:
         OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
         SOFTWARE.
         """
-        # dumpjs_path = os.path.join(os.path.dirname(ipadumper.__file__), 'dump.js')
-
-        print(f'dumpjs: {dumpjs_path}')
-
         bar_fmt = '{desc:20.20} {percentage:3.0f}%|{bar:20}{r_bar}'
         temp_dir = tempfile.mkdtemp()
         self.log.debug(f'{target}: Start dumping. Temp dir: {temp_dir}')
@@ -566,7 +562,7 @@ class AppleDL:
 
     def install(self, itunes_id):
         """
-        Opens app in appstore on device and simulates touch input to download and install the app.
+        Opens app in appstore on device and simulates touch input to download and installs the app.
         If there is a cloud button then press that and done
         Else if there is a load button, press that and confirm with install button.
         return True if successful or False at timeout

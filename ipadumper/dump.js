@@ -410,7 +410,7 @@ function handleMessage(message) {
         send({ dump: result, path: modules[i].path });
     }
     send({ app: app_path.toString() });
-    s<
+    send({ done: "ok" });
     recv(handleMessage);
 }
 

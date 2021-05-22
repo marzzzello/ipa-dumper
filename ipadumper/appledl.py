@@ -18,17 +18,24 @@ import frida  # run scripts on device
 import paramiko  # ssh
 
 # internal
-from ipadumper import utils
+import ipadumper
+from ipadumper.utils import get_logger, itunes_info
 
 
 class AppleDL:
+    """
+    downloader instance
+    On inititalization two iproxy process are started: one for ssh and one for zxtouch
+    Then a ssh and a frida connection will get established and the template images are copied with scp to the device
+    """
+
     def __init__(
         self,
         device_address='localhost',
         local_ssh_port=22222,
         ssh_key_filename='iphone',
         image_base_path_device='/private/var/mobile/Library/ZXTouch/scripts/appstoredownload.bdl',
-        image_base_path_local=os.path.join('appstore_images', 'dark_de'),
+        image_base_path_local=os.path.join(os.path.dirname(ipadumper.__file__), 'appstore_images', 'dark_de'),
         timeout=15,
         log_level='info',
     ):
@@ -39,14 +46,13 @@ class AppleDL:
         self.image_base_path_local = image_base_path_local
         self.timeout = timeout
         self.log_level = log_level
-        self.log = utils.get_logger(log_level, name=__name__)
+        self.log = get_logger(log_level, name=__name__)
 
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
 
         self.running = True
         self.processes = []
-        self.dump_threads = []
         # self.file_dict = {}
         self.installed_cached = TTLCache(maxsize=1, ttl=2)
 
@@ -75,6 +81,9 @@ class AppleDL:
 
     def cleanup(self):
         self.log.debug('Clean up...')
+        self.running = False
+        self.finished.set()
+
         self.log.info('Disconnecting from device')
         try:
             self.device.disconnect()
@@ -94,7 +103,6 @@ class AppleDL:
             if t.name != 'MainThread' and t.is_alive():
                 self.log.debug(f'Running thread: {t.name}')
         self.log.debug('Clean up done')
-        self.running = False
 
     def init_ssh(self):
         """
@@ -141,41 +149,6 @@ class AppleDL:
             self.log.info(f'Make sure no other files except these images are in the directory: {image_names}')
             self.cleanup()
             return False
-
-        # folder_name = os.path.basename(self.image_base_path_local)
-        # self.image_dir_device = f'{self.image_base_path_device}/{folder_name}'
-
-        # self.log.debug('Copy images to device')
-        # self.ssh_cmd(f'mkdir -p {self.image_dir_device}')
-        # sftp_session = self.sshclient.open_sftp()
-
-        # for image_name in image_names:
-        #     image_path_local = os.path.join(self.image_base_path_local, image_name)
-        #     # self.log.debug(f'Copy image {image_name}')
-        #     sftp_session.put(image_path_local, f'{self.image_dir_device}/{image_name}')
-
-        ####
-        ####
-
-        # def progress(filename, size, sent):
-        #     print("%s\'s progress: %.2f%%   \r" % (filename, float(sent) / float(size) * 100))
-
-        # def progress3(filename, size, sent):
-        #     fn = filename.decode('utf-8')
-        #     print(f'{fn} {sent} {size}')
-
-        # t = tqdm(unit='B', unit_scale=True, unit_divisor=1024, miniters=1)
-        # # t = tqdm(ascii=True, unit='b', unit_scale=True)
-
-        # last_sent = [0]
-
-        # def progress2(filename, size, sent):
-        #     fn = filename.decode('utf-8')
-        #     t.desc = os.path.basename(fn)
-        #     t.total = size
-        #     # t.update(int(sent))
-        #     t.update(sent - last_sent[0])
-        #     last_sent[0] = 0 if size == sent else sent
 
         with SCPClient(self.sshclient.get_transport(), socket_timeout=self.timeout) as scp:
             scp.put(self.image_base_path_local, self.image_base_path_device, recursive=True)
@@ -309,7 +282,15 @@ class AppleDL:
         self.ssh_cmd('activator send libactivator.system.homebutton')
         time.sleep(0.5)
 
-    def dump(self, target, output, dumpjs_path='dump.js', timeout=120, disable_progress=False):
+    def dump(
+        self,
+        target,
+        output,
+        timeout=120,
+        disable_progress=False,
+        dumpjs_path=os.path.join(os.path.dirname(ipadumper.__file__), 'dump.js'),
+    ):
+
         """
         target: Bundle identifier of the target app
         output: Specify name of the decrypted IPA
@@ -343,6 +324,9 @@ class AppleDL:
         OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
         SOFTWARE.
         """
+        # dumpjs_path = os.path.join(os.path.dirname(ipadumper.__file__), 'dump.js')
+
+        print(f'dumpjs: {dumpjs_path}')
 
         bar_fmt = '{desc:20.20} {percentage:3.0f}%|{bar:20}{r_bar}'
         temp_dir = tempfile.mkdtemp()
@@ -350,7 +334,7 @@ class AppleDL:
         payload_dir = os.path.join(temp_dir, 'Payload')
         os.mkdir(payload_dir)
 
-        finished = threading.Event()
+        self.finished = threading.Event()
         file_dict = {}
 
         def generate_ipa():
@@ -405,6 +389,7 @@ class AppleDL:
                 payload = message['payload']
             except KeyError:
                 self.log.warning(f'{target}: No payload in message')
+                self.log.debug(f'Message: {message}')
                 return
 
             if 'info' in payload:
@@ -420,7 +405,6 @@ class AppleDL:
                 with tqdm(unit="B", unit_scale=True, miniters=1, bar_format=bar_fmt, disable=disable_progress) as t:
                     pr = progress_helper(t)
                     with SCPClient(self.sshclient.get_transport(), socket_timeout=self.timeout, progress=pr) as scp:
-                        # print(f'scp.get: {scp_from} -- {scp_to}')
                         scp.get(payload['dump'], payload_dir + '/')
 
                 chmod_dir = os.path.join(payload_dir, os.path.basename(payload['dump']))
@@ -446,7 +430,7 @@ class AppleDL:
                 file_dict['app'] = os.path.basename(payload['app'])
 
             if 'done' in payload:
-                finished.set()
+                self.finished.set()
 
         self.log.debug(f'{target}: Opening app')
         self.ssh_cmd(f'open {target}')
@@ -472,11 +456,14 @@ class AppleDL:
         script.post('dump')
 
         success = False
-        if finished.wait(timeout=timeout):
-            generate_ipa()
-            self.log.debug(f'{target}: Dumping finished. Clean up temp dir {temp_dir}')
+        if self.finished.wait(timeout=timeout):
+            if self.running:
+                generate_ipa()
+                self.log.debug(f'{target}: Dumping finished. Clean up temp dir {temp_dir}')
 
-            success = True
+                success = True
+            else:
+                self.log.debug(f'{target}: Cancelling dump. Clean up temp dir {temp_dir}')
         else:
             self.log.error(f'{target}: Timeout of {timeout}s exceeded. Clean up temp dir {temp_dir}')
 
@@ -490,22 +477,23 @@ class AppleDL:
         """
         Installs apps, decrypts and uninstalls them
         In parallel!
+        itunes_ids: list of int with the iTunes IDs
         """
+        if type(itunes_ids[0]) != int:
+            self.log.error('bulk_decrypt: list of int needed')
+            return False
         total = len(itunes_ids)
         wait_for_install = []  # apps that are currently downloading and installing
-        wait_for_dump = []  # apps that currently get dumped
         done = []  # apps that are uninstalled
         waited_time = 0
         while len(itunes_ids) > 0 or len(wait_for_install) > 0:
-            self.log.debug(
-                f'Done {len(done)}/{total}, installing: {len(wait_for_install)}, dumping {len(wait_for_dump)}'
-            )
+            self.log.debug(f'Done {len(done)}/{total}, installing: {len(wait_for_install)}')
             if len(itunes_ids) > 0 and len(wait_for_install) < parallel:
                 # install app
                 self.log.info(f'Installing, len: {len(wait_for_install)}')
 
                 itunes_id = itunes_ids.pop()
-                trackName, version, bundleId, fileSizeMiB, price, currency = utils.itunes_info(
+                trackName, version, bundleId, fileSizeMiB, price, currency = itunes_info(
                     itunes_id, log_level=self.log_level
                 )
                 app = {'bundleId': bundleId, 'fileSizeMiB': fileSizeMiB, 'itunes_id': itunes_id, 'version': version}
@@ -544,20 +532,6 @@ class AppleDL:
                         #     waited_time = 0
                         wait_for_install.remove(app)
 
-                        self.log.debug(f"{app['bundleId']}: Opening app")
-                        self.ssh_cmd(f"open {app['bundleId']}")
-                        time.sleep(0.1)
-
-                        # get rid of permission request popups
-                        while True:
-                            dissallow_xy = self.match_image('dissallow.png')
-                            if dissallow_xy is not False:
-                                self.log.debug(f"{app['bundleId']}: Dissallow permission request")
-                                self.tap(dissallow_xy, message='dissallow')
-                                time.sleep(0.1)
-                            else:
-                                break
-
                         try:
                             os.mkdir(output_directory)
                         except FileExistsError:
@@ -566,24 +540,13 @@ class AppleDL:
                         name = f"{app['itunes_id']}_{app['bundleId']}_{app['version']}.ipa"
                         output = os.path.join(output_directory, name)
                         timeout = self.timeout + app['fileSizeMiB'] // 2
-
                         disable_progress = False if self.log_level == 'debug' else True
 
-                        self.log.info(f'self.log_level: {self.log_level}, disable_progress {disable_progress}')
-
-                        # Starts dump() thread with args and kwargs
-
-                        args = (app['bundleId'], output)
-                        kwargs = {'timeout': timeout, 'disable_progress': disable_progress, 'open_app': False}
-                        t = threading.Thread(target=self.dump, args=args, kwargs=kwargs)
-                        t.daemon = True
-                        t.name = f'dump-{len(self.dump_threads)}-{args[0]}'
-                        self.dump_threads.append(t)
-                        wait_for_dump.append((app, t))
-                        t.start()
-                        self.log.debug('wait for dump')
-                        t.join()
-
+                        self.dump(app['bundleId'], output, timeout=timeout, disable_progress=disable_progress)
+                        # uninstall app after dump
+                        self.log.info(f"{app['bundleId']}: Uninstalling")
+                        subprocess.check_output(['ideviceinstaller', '--uninstall', app['bundleId']])
+                        done.append(app)
                     else:
                         # recalculate remaining download size
                         to_download_size += app['fileSizeMiB']
@@ -601,33 +564,6 @@ class AppleDL:
                         waited_time += 1
                         time.sleep(1)
 
-                # uninstall apps that finished dumping
-                for app, t in wait_for_dump:
-                    if t.is_alive() is False:
-                        self.log.info(f"{app['bundleId']}: Uninstalling")
-                        subprocess.check_output(['ideviceinstaller', '--uninstall', app['bundleId']])
-                        wait_for_dump.remove((app, t))
-                        done.append(app)
-
-        for t in self.dump_threads:
-            self.log.debug(f'Found thread {t.name} waiting to finish')
-            t.join()
-
-        # timeout = self.timeout + fileSizeMiB * timeout_per_MiB
-        # wait_time = 0
-        # success = False
-        # while wait_time < timeout:
-        #     if self.is_installed(bundleId) is not False:
-        #         self.log.info(f'Install Successful: {bundleId} {self.is_installed(bundleId)}')
-        #         success = True
-        #         break
-        #     else:
-        #         wait_time += 1
-        #         time.sleep(1)
-
-        # if success is False:
-        #     self.log.warning(f'Exceeded timeout of {timeout}s')
-
     def install(self, itunes_id):
         """
         Opens app in appstore on device and simulates touch input to download and install the app.
@@ -635,6 +571,17 @@ class AppleDL:
         Else if there is a load button, press that and confirm with install button.
         return True if successful or False at timeout
         """
+
+        # get rid of permission request popups
+        while True:
+            dissallow_xy = self.match_image('dissallow.png')
+            if dissallow_xy is not False:
+                self.log.debug('Dissallow permission request')
+                self.tap(dissallow_xy, message='dissallow')
+                time.sleep(0.1)
+            else:
+                break
+
         self.ssh_cmd(f'uiopen https://apps.apple.com/de/app/id{str(itunes_id)}')
 
         self.log.debug(f'ID {itunes_id}: Waiting for get or cloud button to appear')
@@ -673,19 +620,3 @@ class AppleDL:
 
         self.log.warning(f'ID {itunes_id}: No install button found after {self.timeout}s')
         return False
-
-        # # check for get.png and if not found for cloud.png
-        # dl_btn_xy = self.match_image('get.png')
-
-        # if dl_btn_xy is False:
-        #     # no match:
-        #     dl_btn_xy = self.match_image('cloud.png')
-
-        #     if dl_btn_xy is False:
-        #         # raise Exception('I am stuck')
-        #         self.log.warning(f'ID {itunes_id}: No download button found after {self.timeout}s')
-        #         return False
-
-        #     else:
-        #         # tap and done
-        #         self.tap(dl_btn_xy, 'cloud')

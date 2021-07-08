@@ -68,7 +68,7 @@ class AppleDL:
             self.cleanup()
             return
 
-        if not self.init_ssh() or not self.init_frida() or not self.init_images():
+        if not self.device_connected() or not self.init_frida() or not self.init_ssh() or not self.init_images():
             self.cleanup()
 
     def __del__(self):
@@ -82,15 +82,14 @@ class AppleDL:
     def cleanup(self):
         self.log.debug('Clean up...')
         self.running = False
-        self.finished.set()
 
         self.log.info('Disconnecting from device')
         try:
+            self.finished.set()
             self.device.disconnect()
+            self.sshclient.close()
         except AttributeError:
             pass
-
-        self.sshclient.close()
 
         # close all processes
         for idx, p in enumerate(self.processes, start=1):
@@ -121,6 +120,9 @@ class AppleDL:
         except FileNotFoundError:
             self.log.error(f'Could not find ssh keyfile "{self.ssh_key_filename}"')
             return False
+        except (EOFError, ConnectionResetError, paramiko.ssh_exception.SSHException):
+            self.log.error('Could not connect to establish SSH connection')
+            return False
         return True
 
     def init_frida(self):
@@ -149,9 +151,12 @@ class AppleDL:
             self.log.info(f'Make sure no other files except these images are in the directory: {image_names}')
             self.cleanup()
             return False
-
-        with SCPClient(self.sshclient.get_transport(), socket_timeout=self.timeout) as scp:
-            scp.put(self.image_base_path_local, self.image_base_path_device, recursive=True)
+        try:
+            with SCPClient(self.sshclient.get_transport(), socket_timeout=self.timeout) as scp:
+                scp.put(self.image_base_path_local, self.image_base_path_device, recursive=True)
+        except OSError:
+            self.log.error('Could not copy template images to device')
+            return False
         return True
 
     def ssh_cmd(self, cmd):
@@ -210,6 +215,17 @@ class AppleDL:
 
         t_out.start()
         t_err.start()
+
+    def device_connected(self):
+        """
+        return True if a device is available else retrun False
+        """
+        returncode = subprocess.call(['ideviceinfo'], encoding='utf-8', stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if returncode == 0:
+            return True
+        else:
+            self.log.error('No device found')
+            return False
 
     def is_installed(self, bundleId):
         """

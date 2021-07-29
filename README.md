@@ -22,6 +22,7 @@ Automatically install apps on a jailbroken device iOS device and generate decryp
 ### iOS device
 
 - Set device language to German and theme to dark or **alternativly** make a folder with images of the buttons of your language and theme
+- Disable password prompt for installing free apps under settings (Apple account -> Media & Purchases -> Password Settings).
 - Connect the device to your computer and make sure to accept the trust dialog
 - Install the following packages from Cydia:
   - OpenSSH

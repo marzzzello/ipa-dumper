@@ -7,13 +7,13 @@ import requests
 import coloredlogs  # colored logs
 
 
-def itunes_info(itunes_id, log_level='info'):
+def itunes_info(itunes_id, log_level='info', country='us'):
     """
     return: trackName, trackId, version, bundleId, fileSizeMiB, price, currency
     """
     log = get_logger(log_level, name=__name__)
     log.debug('Get app info from itunes.apple.com')
-    url = f'https://itunes.apple.com/us/search?limit=200&term={str(itunes_id)}&media=software'
+    url = f'https://itunes.apple.com/{country}/search?limit=200&term={str(itunes_id)}&media=software'
     j = requests.get(url).json()
     if j['resultCount'] == 0:
         log.error('no result with that itunes id found')

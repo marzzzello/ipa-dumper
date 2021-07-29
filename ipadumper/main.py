@@ -36,6 +36,7 @@ def main():
     d = 'Downloads info about app from iTunes site'
     parser_itunes_info = subparsers.add_parser('itunes_info', help=d, description=d)
     parser_itunes_info.add_argument('itunes_id', help='iTunes ID', type=int)
+    parser_itunes_info.add_argument('--country', help='Two letter country code (default: %(default)s)', default='us')
 
     # Create parent subparser for with common arguments
     parent_parser = ArgumentParser(add_help=False, formatter_class=F)
@@ -76,6 +77,7 @@ def main():
     parser_bulk_decrypt.add_argument(
         '--timeout_per_MiB', help='Timeout per MiB (default: %(default)s)', type=float, default=0.5, metavar='SECONDS'
     )
+    parser_bulk_decrypt.add_argument('--country', help='Two letter country code (default: %(default)s)', default='us')
 
     # dump
     d = 'Decrypts und dumps ipa package'
@@ -92,7 +94,7 @@ def main():
     # ssh_cmd
     d = 'Execute ssh command on device'
     parser_ssh_cmd = subparsers.add_parser('ssh_cmd', parents=[parent_parser], help=d, description=d, formatter_class=F)
-    parser_ssh_cmd.add_argument('command', help='command')
+    parser_ssh_cmd.add_argument('cmd', help='command')
 
     # install
     d = 'Opens app in appstore on device and simulates touch input to download and installs the app'
@@ -135,7 +137,7 @@ def main():
         exit()
     exitcode = 0
     if args.command == 'itunes_info':
-        itunes_info(args.itunes_id, log_level='debug')
+        itunes_info(args.itunes_id, log_level='debug', country=args.country)
     else:
         a = AppleDL(
             device_address=args.device_address,
@@ -158,7 +160,9 @@ def main():
         elif args.command == 'dump':
             exitcode = a.dump(args.bundleID, args.output, args.timeout)
         elif args.command == 'ssh_cmd':
-            exitcode, _, _ = a.ssh_cmd(args.command)
+            exitcode, stdout, stderr = a.ssh_cmd(args.cmd)
+            print(stdout)
+            print(stderr)
         elif args.command == 'install':
             exitcode = a.install(args.itunes_id)
 

@@ -57,18 +57,22 @@ class AppleDL:
         self.installed_cached = TTLCache(maxsize=1, ttl=2)
 
         self.log.debug('Logging is set to debug')
-        self.run_cmd(['iproxy', str(self.local_ssh_port), '22'])
-        self.run_cmd(['iproxy', '6000', '6000'])
 
-        self.log.info(f'Connecting to device at {device_address}:6000')
-        try:
-            self.device = zxtouch(device_address)
-        except ConnectionRefusedError:
-            self.log.error('Error connecting to device. Make sure iproxy is running')
-            self.cleanup()
-            return
+        if self.device_connected():
+            self.run_cmd(['iproxy', str(self.local_ssh_port), '22'])
+            self.run_cmd(['iproxy', '6000', '6000'])
 
-        if not self.device_connected() or not self.init_frida() or not self.init_ssh() or not self.init_images():
+            self.log.info(f'Connecting to device at {device_address}:6000')
+            try:
+                self.device = zxtouch(device_address)
+            except ConnectionRefusedError:
+                self.log.error('Error connecting to device. Make sure iproxy is running')
+                self.cleanup()
+                return
+
+            if not self.init_frida() or not self.init_ssh() or not self.init_images():
+                self.cleanup()
+        else:
             self.cleanup()
 
     def __del__(self):
@@ -485,7 +489,7 @@ class AppleDL:
             session.detach()
         return success
 
-    def bulk_decrypt(self, itunes_ids, timeout_per_MiB=0.5, parallel=3, output_directory='ipa_output'):
+    def bulk_decrypt(self, itunes_ids, timeout_per_MiB=0.5, parallel=3, output_directory='ipa_output', country='us'):
         """
         Installs apps, decrypts and uninstalls them
         In parallel!
@@ -506,7 +510,7 @@ class AppleDL:
 
                 itunes_id = itunes_ids.pop()
                 trackName, version, bundleId, fileSizeMiB, price, currency = itunes_info(
-                    itunes_id, log_level=self.log_level
+                    itunes_id, log_level=self.log_level, country=country
                 )
                 app = {'bundleId': bundleId, 'fileSizeMiB': fileSizeMiB, 'itunes_id': itunes_id, 'version': version}
 

@@ -49,13 +49,15 @@ def main():
     parent_parser.add_argument(
         '--ssh_key', help='Path to ssh keyfile (default: %(default)s)', default='iphone', metavar='PATH'
     )
-
     imagedir = path.join(path.dirname(ipadumper.__file__), 'appstore_images')
     parent_parser.add_argument(
         '--imagedir', help='Path to appstore images (default: %(default)s)', default=imagedir, metavar='PATH'
     )
     parent_parser.add_argument('--theme', help='Theme of device dark/light (default: %(default)s)', default='dark')
     parent_parser.add_argument('--lang', help='Language of device (2 letter code) (default: %(default)s)', default='en')
+    parent_parser.add_argument(
+        '--udid', help='UDID (Unique Device Identifier) of device (default: %(default)s)', default=None, metavar='UDID'
+    )
     parent_parser.add_argument(
         '--base_timeout',
         help='Base timeout for various things (default: %(default)s)',

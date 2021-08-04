@@ -34,20 +34,24 @@ class AppleDL:
         device_address='localhost',
         local_ssh_port=22222,
         ssh_key_filename='iphone',
+        local_zxtouch_port=6000,
         image_base_path_device='/private/var/mobile/Library/ZXTouch/scripts/appstoredownload.bdl',
         image_base_path_local=os.path.join(os.path.dirname(ipadumper.__file__), 'appstore_images'),
         theme='dark',
         lang='en',
+        udid=None,
         timeout=15,
         log_level='info',
     ):
         self.device_address = device_address
         self.local_ssh_port = local_ssh_port
         self.ssh_key_filename = ssh_key_filename
+        self.local_zxtouch_port = local_zxtouch_port
         self.image_base_path_device = image_base_path_device
         self.image_base_path_local = image_base_path_local
         self.theme = theme
         self.lang = lang
+        self.udid = udid
         self.timeout = timeout
         self.log_level = log_level
         self.log = get_logger(log_level, name=__name__)
@@ -63,10 +67,13 @@ class AppleDL:
         self.log.debug('Logging is set to debug')
 
         if self.device_connected():
-            self.run_cmd(['iproxy', str(self.local_ssh_port), '22'])
-            self.run_cmd(['iproxy', '6000', '6000'])
-
-            self.log.info(f'Connecting to device at {device_address}:6000')
+            if self.udid is None:
+                self.run_cmd(['iproxy', str(local_ssh_port), '22'])
+                self.run_cmd(['iproxy', str(local_zxtouch_port), '6000'])
+            else:
+                self.run_cmd(['iproxy', '--udid', self.udid, str(local_ssh_port), '22'])
+                self.run_cmd(['iproxy', '--udid', self.udid, str(local_zxtouch_port), '6000'])
+            self.log.info(f'Connecting to device at {device_address}:{local_zxtouch_port}')
             try:
                 self.device = zxtouch(device_address)
             except ConnectionRefusedError:
@@ -138,14 +145,16 @@ class AppleDL:
         set frida device
         return success
         """
-        device_manager = frida.get_device_manager()
-        devices = device_manager.enumerate_devices()
-        for device in devices:
-            if device.type == 'usb' and device.name == 'iOS Device':
-                self.frida_device = device
-                return True
-        self.log.error('No Frida USB device found')
-        return False
+        try:
+            if self.udid is None:
+                self.frida_device = frida.get_usb_device()
+            else:
+                self.frida_device = frida.get_device(self.uuid)
+        except frida.InvalidArgumentError:
+            self.log.error('No Frida USB device found')
+            return False
+
+        return True
 
     def init_images(self):
         """
@@ -260,12 +269,24 @@ class AppleDL:
         """
         return True if a device is available else retrun False
         """
-        returncode = subprocess.call(['ideviceinfo'], encoding='utf-8', stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        if returncode == 0:
-            return True
+        if self.udid is None:
+            returncode = subprocess.call(
+                ['ideviceinfo'], encoding='utf-8', stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
+            if returncode == 0:
+                return True
+            else:
+                self.log.error('No device found')
+                return False
         else:
-            self.log.error('No device found')
-            return False
+            returncode = subprocess.call(
+                ['ideviceinfo', '--udid', self.udid], encoding='utf-8', stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
+            if returncode == 0:
+                return True
+            else:
+                self.log.error(f'Device {self.udid} not found')
+                return False
 
     def is_installed(self, bundleId):
         """
@@ -274,7 +295,10 @@ class AppleDL:
         try:
             out = self.installed_cached[0]
         except KeyError:
-            out = subprocess.check_output(['ideviceinstaller', '-l'], encoding='utf-8')
+            if self.udid is None:
+                out = subprocess.check_output(['ideviceinstaller', '-l'], encoding='utf-8')
+            else:
+                out = subprocess.check_output(['ideviceinstaller', '--udid', self.udid, '-l'], encoding='utf-8')
             # cache output
             self.installed_cached[0] = out
 
@@ -597,7 +621,12 @@ class AppleDL:
                         self.dump(app['bundleId'], output, timeout=timeout, disable_progress=disable_progress)
                         # uninstall app after dump
                         self.log.info(f"{app['bundleId']}: Uninstalling")
-                        subprocess.check_output(['ideviceinstaller', '--uninstall', app['bundleId']])
+                        if self.udid is None:
+                            subprocess.check_output(['ideviceinstaller', '--uninstall', app['bundleId']])
+                        else:
+                            subprocess.check_output(
+                                ['ideviceinstaller', '--udid', self.udid, '--uninstall', app['bundleId']]
+                            )
                         done.append(app)
                     else:
                         # recalculate remaining download size

@@ -35,7 +35,9 @@ class AppleDL:
         local_ssh_port=22222,
         ssh_key_filename='iphone',
         image_base_path_device='/private/var/mobile/Library/ZXTouch/scripts/appstoredownload.bdl',
-        image_base_path_local=os.path.join(os.path.dirname(ipadumper.__file__), 'appstore_images', 'dark_de'),
+        image_base_path_local=os.path.join(os.path.dirname(ipadumper.__file__), 'appstore_images'),
+        theme='dark',
+        lang='en',
         timeout=15,
         log_level='info',
     ):
@@ -44,6 +46,8 @@ class AppleDL:
         self.ssh_key_filename = ssh_key_filename
         self.image_base_path_device = image_base_path_device
         self.image_base_path_local = image_base_path_local
+        self.theme = theme
+        self.lang = lang
         self.timeout = timeout
         self.log_level = log_level
         self.log = get_logger(log_level, name=__name__)
@@ -148,16 +152,48 @@ class AppleDL:
         Copy template images from local folder to device
         return success
         """
-        _, _, filenames = next(os.walk(self.image_base_path_local))
-        image_names = ['dissallow.png', 'get.png', 'install.png', 'cloud.png', 'open.png']
-        if filenames != image_names:
-            self.log.error(f'Image files not found in {self.image_base_path_local}')
-            self.log.info(f'Make sure no other files except these images are in the directory: {image_names}')
-            self.cleanup()
+
+        # check directory structure
+        try:
+            _, dirnames_themes, _ = next(os.walk(self.image_base_path_local))
+        except StopIteration:
+            self.log.error(f'Image directory not found: {self.image_base_path_local}')
             return False
+        theme_path = os.path.join(self.image_base_path_local, self.theme)
+        lang_path = os.path.join(self.image_base_path_local, self.theme, self.lang)
+
+        if self.theme in dirnames_themes:
+            _, dirnames_langs, filenames_theme = next(os.walk(theme_path))
+            if self.lang not in dirnames_langs:
+                self.log.error(f'Language directory "{self.lang}" not found in {theme_path}')
+                return False
+        else:
+            self.log.error(f'Theme directory "{self.theme}" not found in {self.image_base_path_local}')
+            return False
+
+        # check if all images exist locally
+        image_names_unlabeled = ['cloud.png']
+        image_names_labeled = ['dissallow.png', 'get.png', 'install.png']
+
+        _, _, filenames_lang = next(os.walk(lang_path))
+        for image_name_labeled in image_names_labeled:
+            if image_name_labeled not in filenames_lang:
+                self.log.error(f'Image {image_name_labeled} not found in {lang_path}')
+                return False
+
+        for image_name_unlabeled in image_names_unlabeled:
+            if image_name_unlabeled not in filenames_theme:
+                self.log.error(f'Image {image_name_unlabeled} not found in {theme_path}')
+                return False
+
+        # transfer images over SSH
         try:
             with SCPClient(self.sshclient.get_transport(), socket_timeout=self.timeout) as scp:
-                scp.put(self.image_base_path_local, self.image_base_path_device, recursive=True)
+                for labeled_img in image_names_labeled:
+                    scp.put(os.path.join(lang_path, labeled_img), self.image_base_path_device)
+                for unlabeled_img in image_names_unlabeled:
+                    unlabeled_img_path = os.path.join(theme_path, unlabeled_img)
+                    scp.put(unlabeled_img_path, self.image_base_path_device)
         except OSError:
             self.log.error('Could not copy template images to device')
             return False
@@ -258,7 +294,7 @@ class AppleDL:
         if matching return x,y coordinates from the middle
         else return False
         '''
-        path = f'{self.image_base_path_device}/{os.path.basename(self.image_base_path_local)}/{image_name}'
+        path = f'{self.image_base_path_device}/{image_name}'
         result_tuple = self.device.image_match(path, acceptable_value, max_try_times, scaleRation)
 
         if result_tuple[0] is not True:

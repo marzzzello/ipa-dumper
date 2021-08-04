@@ -50,10 +50,12 @@ def main():
         '--ssh_key', help='Path to ssh keyfile (default: %(default)s)', default='iphone', metavar='PATH'
     )
 
-    imagedir = path.join(path.dirname(ipadumper.__file__), 'appstore_images', 'dark_de')
+    imagedir = path.join(path.dirname(ipadumper.__file__), 'appstore_images')
     parent_parser.add_argument(
         '--imagedir', help='Path to appstore images (default: %(default)s)', default=imagedir, metavar='PATH'
     )
+    parent_parser.add_argument('--theme', help='Theme of device dark/light (default: %(default)s)', default='dark')
+    parent_parser.add_argument('--lang', help='Language of device (2 letter code) (default: %(default)s)', default='en')
     parent_parser.add_argument(
         '--base_timeout',
         help='Base timeout for various things (default: %(default)s)',
@@ -144,6 +146,8 @@ def main():
             local_ssh_port=args.device_port,
             ssh_key_filename=args.ssh_key,
             image_base_path_local=args.imagedir,
+            theme=args.theme,
+            lang=args.lang,
             timeout=args.base_timeout,
             log_level=args.verbosity,
         )

@@ -10,7 +10,7 @@
 
 # ipa-dumper
 
-Automatically install apps on a jailbroken device iOS device and generate decrypted ipa packages
+Automatically install apps on a jailbroken device iOS device and generate decrypted IPAs
 
 ## Requirements
 

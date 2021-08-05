@@ -84,13 +84,16 @@ def main():
     parser_bulk_decrypt.add_argument('--country', help='Two letter country code (default: %(default)s)', default='us')
 
     # dump
-    d = 'Decrypts und dumps ipa package'
+    d = 'Decrypt app binary und dump IPA'
     parser_dump = subparsers.add_parser('dump', parents=[parent_parser], help=d, description=d, formatter_class=F)
     parser_dump.add_argument('bundleID', help='Bundle ID from app like com.app.name')
     parser_dump.add_argument('output', help='Output filename', metavar='PATH')
     parser_dump.add_argument(
+        '--frida', help='Use Frida instead of FoulDecrypt (default: %(default)s)', action='store_true'
+    )
+    parser_dump.add_argument(
         '--timeout',
-        help='Frida dump timeout (default: %(default)s)',
+        help='Dump timeout (default: %(default)s)',
         type=float,
         default=120,
         metavar='SECONDS',
@@ -164,7 +167,10 @@ def main():
                 itunes_ids, timeout_per_MiB=args.timeout_per_MiB, parallel=args.parallel, output_directory=args.output
             )
         elif args.command == 'dump':
-            exitcode = a.dump(args.bundleID, args.output, args.timeout)
+            if args.frida:
+                exitcode = a.dump_frida(args.bundleID, args.output, args.timeout)
+            else:
+                exitcode = a.dump_fouldecrypt(args.bundleID, args.output, args.timeout)
         elif args.command == 'ssh_cmd':
             exitcode, stdout, stderr = a.ssh_cmd(args.cmd)
             print(stdout)

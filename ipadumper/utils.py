@@ -1,6 +1,7 @@
 # stdlib
 from datetime import datetime
 import logging
+import os
 import requests
 
 # external
@@ -84,3 +85,21 @@ def get_logger(log_level, name=__name__):
     # logger.propagate = False  # no logging of libs
     coloredlogs.install(level=log_level, logger=logger, fmt=fmt, datefmt=datefmt, level_styles=ls, field_styles=fs)
     return logger
+
+
+def progress_helper(t):
+    """
+    returns progress function
+    """
+    last_sent = [0]
+
+    def progress(filename, size, sent):
+        if isinstance(filename, bytes):
+            filename = filename.decode('utf-8')
+        t.desc = os.path.basename(filename)
+        t.total = size
+        displayed = t.update(sent - last_sent[0])
+        last_sent[0] = 0 if size == sent else sent
+        return displayed
+
+    return progress

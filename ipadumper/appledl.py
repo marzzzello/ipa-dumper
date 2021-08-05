@@ -19,7 +19,7 @@ import paramiko  # ssh
 
 # internal
 import ipadumper
-from ipadumper.utils import get_logger, itunes_info
+from ipadumper.utils import get_logger, itunes_info, progress_helper
 
 
 class AppleDL:
@@ -362,7 +362,82 @@ class AppleDL:
         self.ssh_cmd('activator send libactivator.system.homebutton')
         time.sleep(0.5)
 
-    def dump(
+    def dump_fouldecrypt(self, target, output, timeout=120, disable_progress=False):
+        """
+        Dump IPA by using FoulDecrypt
+        Return success
+        """
+        self.log.debug(f'{target}: Start dumping with FoulDecrypt.')
+
+        # get path of app
+        apps_dir = '/private/var/containers/Bundle/Application/'
+        cmd = f'grep --only-matching {target} {apps_dir}*/iTunesMetadata.plist'
+        ret, stdout, stderr = self.ssh_cmd(cmd)
+        if ret != 0:
+            self.log.error(f'grep returned {ret} {stderr}')
+            return False
+
+        target_dir = stdout.split('/iTunesMetadata.plist ')[0].split(' ')[-1]
+
+        # get app directory name
+        cmd = f'ls -d {target_dir}/*/'
+        ret, stdout, stderr = self.ssh_cmd(cmd)
+        if ret != 0:
+            self.log.error(f'ls -d returned {ret} {stderr}')
+            return False
+
+        app_dir = stdout.strip().rstrip('/').split('/')[-1]
+        if not app_dir.endswith('.app'):
+            self.log.error(f'App directory does not end with .app: {app_dir}')
+            return False
+
+        app_bin = app_dir[:-4]
+
+        bin_path = target_dir + '/' + app_dir + '/' + app_bin
+
+        # decrypt binary and replace
+        cmd = f'/usr/local/bin/fouldecrypt -v {bin_path} {bin_path}'
+        ret, stdout, stderr = self.ssh_cmd(cmd)
+        if ret != 0:
+            self.log.error(f'fouldecrypt returned {ret} {stderr}')
+            return False
+
+        # transfer app directory
+        bar_fmt = '{desc:20.20} {percentage:3.0f}%|{bar:20}{r_bar}'
+        temp_dir = tempfile.mktemp()
+        self.log.debug(f'{target}: Start dumping. Temp dir: {temp_dir}')
+
+        with tqdm(unit="B", unit_scale=True, miniters=1, bar_format=bar_fmt, disable=disable_progress) as t:
+            pr = progress_helper(t)
+            with SCPClient(self.sshclient.get_transport(), socket_timeout=self.timeout, progress=pr) as scp:
+                scp.get(target_dir + '/', os.path.join(temp_dir, ''), recursive=True)
+
+        # move app in Payload folder
+        tmp_payload_dir = os.path.join(temp_dir, 'Payload')
+        tmp_app_dir = os.path.join(temp_dir, app_dir)
+        os.mkdir(tmp_payload_dir)
+        shutil.move(tmp_app_dir, tmp_payload_dir)
+
+        _, dirnames, filenames = next(os.walk(temp_dir))
+        self.log.debug(f'dirs: {dirnames} files: {filenames}')
+
+        self.log.debug(f'{target}: Set access and modified date to 0 for reproducible zip files')
+        for f in pathlib.Path(temp_dir).glob('**/*'):
+            os.utime(f, (0, 0))
+
+        # pack ipa
+        zip_args = ('zip', '-qrX', os.path.join(os.getcwd(), output), '.', '-i', 'Payload/*')
+        self.log.debug(f'{target}: Run zip: {zip_args}')
+        try:
+            subprocess.check_call(zip_args, cwd=temp_dir)
+        except subprocess.CalledProcessError as err:
+            self.log.error(f'{target}: {zip_args} {str(err)}')
+
+        self.log.debug(f'{target}: Dumping finished. Clean up temp dir {temp_dir}')
+        shutil.rmtree(temp_dir)
+        return True
+
+    def dump_frida(
         self,
         target,
         output,
@@ -406,7 +481,7 @@ class AppleDL:
         """
         bar_fmt = '{desc:20.20} {percentage:3.0f}%|{bar:20}{r_bar}'
         temp_dir = tempfile.mkdtemp()
-        self.log.debug(f'{target}: Start dumping. Temp dir: {temp_dir}')
+        self.log.debug(f'{target}: Start dumping with Frida. Temp dir: {temp_dir}')
         payload_dir = os.path.join(temp_dir, 'Payload')
         os.mkdir(payload_dir)
 
@@ -436,23 +511,6 @@ class AppleDL:
                 subprocess.check_call(zip_args, cwd=temp_dir)
             except subprocess.CalledProcessError as err:
                 self.log.error(f'{target}: {zip_args} {str(err)}')
-
-        def progress_helper(t):
-            """
-            returns progress function
-            """
-            last_sent = [0]
-
-            def progress(filename, size, sent):
-                if isinstance(filename, bytes):
-                    filename = filename.decode('utf-8')
-                t.desc = os.path.basename(filename)
-                t.total = size
-                displayed = t.update(sent - last_sent[0])
-                last_sent[0] = 0 if size == sent else sent
-                return displayed
-
-            return progress
 
         def on_message(message, data):
             """
@@ -618,7 +676,7 @@ class AppleDL:
                         timeout = self.timeout + app['fileSizeMiB'] // 2
                         disable_progress = False if self.log_level == 'debug' else True
 
-                        self.dump(app['bundleId'], output, timeout=timeout, disable_progress=disable_progress)
+                        self.dump_frida(app['bundleId'], output, timeout=timeout, disable_progress=disable_progress)
                         # uninstall app after dump
                         self.log.info(f"{app['bundleId']}: Uninstalling")
                         if self.udid is None:

@@ -28,14 +28,9 @@ Automatically install apps on a jailbroken device iOS device and generate decryp
   - OpenSSH
   - Open for iOS 11
   - Frida from https://build.frida.re
+  - FoulDecrypt from https://repo.misty.moe/apt
   - NoAppThinning from https://n3d1117.github.io
   - ZXTouch from https://zxtouch.net
-- not needed
-
-  - Activator from https://rpetri.ch/repo
-  - AutoTouch
-  - bfdecrypt from https://level3tjg.xyz/repo/
-  - plutil
 
 ### Linux device
 
@@ -67,7 +62,7 @@ positional arguments:
     usage               Print full usage
     itunes_info         Downloads info about app from iTunes site
     bulk_decrypt        Installs apps, decrypts and uninstalls them
-    dump                Decrypts und dumps ipa package
+    dump                Decrypt app binary und dump IPA
     ssh_cmd             Execute ssh command on device
     install             Opens app in appstore on device and simulates touch
                         input to download and installs the app
@@ -80,33 +75,40 @@ optional arguments:
 
 All commands in detail:
 itunes_info:
-usage: ipadumper itunes_info [-h] itunes_id
+usage: ipadumper itunes_info [-h] [--country COUNTRY] itunes_id
 
 Downloads info about app from iTunes site
 
 positional arguments:
-  itunes_id   iTunes ID
+  itunes_id          iTunes ID
 
 optional arguments:
-  -h, --help  show this help message and exit
+  -h, --help         show this help message and exit
+  --country COUNTRY  Two letter country code (default: us)
 
 
 Common optional arguments for bulk_decrypt, dump, ssh_cmd, install:
+optional arguments:
   --device_address HOSTNAME  device address (default: localhost)
   --device_port PORT         device port (default: 22222)
   --ssh_key PATH             Path to ssh keyfile (default: iphone)
   --imagedir PATH            Path to appstore images (default:
                              $HOME/.local/lib/python3.9/site-
-                             packages/ipadumper/appstore_images/dark_de)
+                             packages/ipadumper/appstore_images)
+  --theme THEME              Theme of device dark/light (default: dark)
+  --lang LANG                Language of device (2 letter code) (default: en)
+  --udid UDID                UDID (Unique Device Identifier) of device
+                             (default: None)
   --base_timeout SECONDS     Base timeout for various things (default: 15)
 
 
 bulk_decrypt:
 usage: ipadumper bulk_decrypt [-h] [--device_address HOSTNAME]
                               [--device_port PORT] [--ssh_key PATH]
-                              [--imagedir PATH] [--base_timeout SECONDS]
+                              [--imagedir PATH] [--theme THEME] [--lang LANG]
+                              [--udid UDID] [--base_timeout SECONDS]
                               [--parallel PARALLEL]
-                              [--timeout_per_MiB SECONDS]
+                              [--timeout_per_MiB SECONDS] [--country COUNTRY]
                               itunes_ids output
 
 Installs apps, decrypts and uninstalls them
@@ -116,43 +118,60 @@ positional arguments:
   output                     Output directory
 
 optional arguments:
+  --theme THEME              Theme of device dark/light (default: dark)
+  --lang LANG                Language of device (2 letter code) (default: en)
+  --udid UDID                UDID (Unique Device Identifier) of device
+                             (default: None)
   --parallel PARALLEL        How many apps get installed in parallel (default:
                              3)
   --timeout_per_MiB SECONDS  Timeout per MiB (default: 0.5)
+  --country COUNTRY          Two letter country code (default: us)
 
 
 dump:
 usage: ipadumper dump [-h] [--device_address HOSTNAME] [--device_port PORT]
-                      [--ssh_key PATH] [--imagedir PATH]
-                      [--base_timeout SECONDS] [--timeout SECONDS]
+                      [--ssh_key PATH] [--imagedir PATH] [--theme THEME]
+                      [--lang LANG] [--udid UDID] [--base_timeout SECONDS]
+                      [--frida] [--timeout SECONDS]
                       bundleID PATH
 
-Decrypts und dumps ipa package
+Decrypt app binary und dump IPA
 
 positional arguments:
   bundleID                   Bundle ID from app like com.app.name
   PATH                       Output filename
 
 optional arguments:
-  --timeout SECONDS          Frida dump timeout (default: 120)
+  --theme THEME              Theme of device dark/light (default: dark)
+  --lang LANG                Language of device (2 letter code) (default: en)
+  --udid UDID                UDID (Unique Device Identifier) of device
+                             (default: None)
+  --frida                    Use Frida instead of FoulDecrypt (default: False)
+  --timeout SECONDS          Dump timeout (default: 120)
 
 
 ssh_cmd:
 usage: ipadumper ssh_cmd [-h] [--device_address HOSTNAME] [--device_port PORT]
-                         [--ssh_key PATH] [--imagedir PATH]
-                         [--base_timeout SECONDS]
-                         command
+                         [--ssh_key PATH] [--imagedir PATH] [--theme THEME]
+                         [--lang LANG] [--udid UDID] [--base_timeout SECONDS]
+                         cmd
 
 Execute ssh command on device
 
 positional arguments:
-  command                    command
+  cmd                        command
+
+optional arguments:
+  --theme THEME              Theme of device dark/light (default: dark)
+  --lang LANG                Language of device (2 letter code) (default: en)
+  --udid UDID                UDID (Unique Device Identifier) of device
+                             (default: None)
 
 
 install:
 usage: ipadumper install [-h] [--device_address HOSTNAME] [--device_port PORT]
-                         [--ssh_key PATH] [--imagedir PATH]
-                         [--base_timeout SECONDS]
+                         [--ssh_key PATH] [--imagedir PATH] [--theme THEME]
+                         [--lang LANG] [--udid UDID] [--base_timeout SECONDS]
                          itunes_id
 
 Opens app in appstore on device and simulates touch input to download and
@@ -160,4 +179,10 @@ installs the app
 
 positional arguments:
   itunes_id                  iTunes ID
+
+optional arguments:
+  --theme THEME              Theme of device dark/light (default: dark)
+  --lang LANG                Language of device (2 letter code) (default: en)
+  --udid UDID                UDID (Unique Device Identifier) of device
+                             (default: None)
 ```

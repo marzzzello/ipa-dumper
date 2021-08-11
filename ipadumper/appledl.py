@@ -19,45 +19,46 @@ import paramiko  # ssh
 
 # internal
 import ipadumper
-from ipadumper.utils import get_logger, itunes_info, progress_helper
+from ipadumper.utils import get_logger, itunes_info, progress_helper, free_port
 
 
 class AppleDL:
-    """
-    downloader instance
+    '''
+    Downloader instance for a single device
     On inititalization two iproxy process are started: one for ssh and one for zxtouch
     Then a ssh and a frida connection will get established and the template images are copied with scp to the device
-    """
+    '''
 
     def __init__(
         self,
+        udid=None,
         device_address='localhost',
-        local_ssh_port=22222,
         ssh_key_filename='iphone',
-        local_zxtouch_port=6000,
+        local_ssh_port=0,
+        local_zxtouch_port=0,
         image_base_path_device='/private/var/mobile/Library/ZXTouch/scripts/appstoredownload.bdl',
         image_base_path_local=os.path.join(os.path.dirname(ipadumper.__file__), 'appstore_images'),
         theme='dark',
         lang='en',
-        udid=None,
         timeout=15,
         log_level='info',
+        init=True,
     ):
+        self.udid = udid
         self.device_address = device_address
-        self.local_ssh_port = local_ssh_port
         self.ssh_key_filename = ssh_key_filename
+        self.local_ssh_port = local_ssh_port
         self.local_zxtouch_port = local_zxtouch_port
         self.image_base_path_device = image_base_path_device
         self.image_base_path_local = image_base_path_local
         self.theme = theme
         self.lang = lang
-        self.udid = udid
         self.timeout = timeout
         self.log_level = log_level
         self.log = get_logger(log_level, name=__name__)
 
-        signal.signal(signal.SIGINT, self.signal_handler)
-        signal.signal(signal.SIGTERM, self.signal_handler)
+        signal.signal(signal.SIGINT, self.__signal_handler)
+        signal.signal(signal.SIGTERM, self.__signal_handler)
 
         self.running = True
         self.processes = []
@@ -66,31 +67,22 @@ class AppleDL:
 
         self.log.debug('Logging is set to debug')
 
-        if self.device_connected():
-            if self.udid is None:
-                self.run_cmd(['iproxy', str(local_ssh_port), '22'])
-                self.run_cmd(['iproxy', str(local_zxtouch_port), '6000'])
-            else:
-                self.run_cmd(['iproxy', '--udid', self.udid, str(local_ssh_port), '22'])
-                self.run_cmd(['iproxy', '--udid', self.udid, str(local_zxtouch_port), '6000'])
-            self.log.info(f'Connecting to device at {device_address}:{local_zxtouch_port}')
-            try:
-                self.device = zxtouch(device_address)
-            except ConnectionRefusedError:
-                self.log.error('Error connecting to device. Make sure iproxy is running')
-                self.cleanup()
-                return
+        self.init_frida_done = False
+        self.init_ssh_done = False
+        self.init_zxtouch_done = False
+        self.init_images_done = False
 
-            if not self.init_frida() or not self.init_ssh() or not self.init_images():
-                self.cleanup()
-        else:
+        if not self.device_connected():
             self.cleanup()
+        elif init is True:
+            if not self.init_all():
+                self.cleanup()
 
     def __del__(self):
         if self.running:
             self.cleanup()
 
-    def signal_handler(self, signum, frame):
+    def __signal_handler(self, signum, frame):
         self.log.info('Received exit signal')
         self.cleanup()
 
@@ -118,11 +110,68 @@ class AppleDL:
                 self.log.debug(f'Running thread: {t.name}')
         self.log.debug('Clean up done')
 
+    def init_all(self):
+        '''
+        return success
+        '''
+        if not self.init_frida() or not self.init_ssh() or not self.init_zxtouch or not self.init_images():
+            return False
+        return True
+
+    def device_connected(self):
+        '''
+        return True if a device is available else return False
+        '''
+        if self.udid is None:
+            returncode = subprocess.call(
+                ['ideviceinfo'], encoding='utf-8', stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
+            if returncode == 0:
+                return True
+            else:
+                self.log.error('No device found')
+                return False
+        else:
+            returncode = subprocess.call(
+                ['ideviceinfo', '--udid', self.udid], encoding='utf-8', stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
+            if returncode == 0:
+                return True
+            else:
+                self.log.error(f'Device {self.udid} not found')
+                return False
+
+    def init_frida(self):
+        '''
+        set frida device
+        return success
+        '''
+        try:
+            if self.udid is None:
+                self.frida_device = frida.get_usb_device()
+            else:
+                self.frida_device = frida.get_device(self.udid)
+        except frida.InvalidArgumentError:
+            self.log.error('No Frida USB device found')
+            return False
+
+        self.init_frida_done = True
+        return True
+
     def init_ssh(self):
-        """
+        '''
         Initializing SSH connection to device
         return success
-        """
+        '''
+        # start iproxy for SSH
+        if self.local_ssh_port == 0:
+            self.local_ssh_port = free_port()
+        if self.udid is None:
+            self.__run_cmd(['iproxy', str(self.local_ssh_port), '22'])
+        else:
+            self.__run_cmd(['iproxy', '--udid', self.udid, str(self.local_ssh_port), '22'])
+        time.sleep(0.1)
+
         self.log.debug('Connecting to device via SSH')
         # pkey = paramiko.Ed25519Key.from_private_key_file(self.ssh_key_filename)
         self.sshclient = paramiko.SSHClient()
@@ -138,29 +187,35 @@ class AppleDL:
         except (EOFError, ConnectionResetError, paramiko.ssh_exception.SSHException):
             self.log.error('Could not connect to establish SSH connection')
             return False
+
+        self.init_ssh_done = True
         return True
 
-    def init_frida(self):
-        """
-        set frida device
-        return success
-        """
+    def init_zxtouch(self):
+        # start iproxy for zxtouch
+        if self.local_zxtouch_port == 0:
+            self.local_zxtouch_port = free_port()
+        if self.udid is None:
+            self.__run_cmd(['iproxy', str(self.local_zxtouch_port), '6000'])
+        else:
+            self.__run_cmd(['iproxy', '--udid', self.udid, str(self.local_zxtouch_port), '6000'])
+
+        self.log.info(f'Connecting to device at {self.device_address}:{self.local_zxtouch_port}')
         try:
-            if self.udid is None:
-                self.frida_device = frida.get_usb_device()
-            else:
-                self.frida_device = frida.get_device(self.uuid)
-        except frida.InvalidArgumentError:
-            self.log.error('No Frida USB device found')
+            self.device = zxtouch(self.device_address, port=self.local_zxtouch_port)
+        except ConnectionRefusedError:
+            self.log.error('Error connecting to zxtouch on device. Make sure iproxy is running')
+            self.cleanup()
             return False
 
+        self.init_zxtouch_done = True
         return True
 
     def init_images(self):
-        """
+        '''
         Copy template images from local folder to device
         return success
-        """
+        '''
 
         # check directory structure
         try:
@@ -206,13 +261,19 @@ class AppleDL:
         except OSError:
             self.log.error('Could not copy template images to device')
             return False
+
+        self.init_images_done = True
         return True
 
     def ssh_cmd(self, cmd):
-        """
+        '''
         execute command via ssh and iproxy
         return exitcode, stdout, stderr
-        """
+        '''
+        if not self.init_ssh_done:
+            if not self.init_ssh():
+                return 1, '', ''
+
         self.log.debug(f'Run ssh cmd: {cmd}')
         stdin, stdout, stderr = self.sshclient.exec_command(cmd)
 
@@ -229,7 +290,7 @@ class AppleDL:
             self.log.debug(f'Exitcode: {exitcode}\nSTDOUT:\n{out}STDERR:\n{err}DONE')
         return exitcode, out, err
 
-    def log_cmd(self, pipe, err):
+    def __log_cmd(self, pipe, err):
         with pipe:
             for line in iter(pipe.readline, b''):  # b'\n'-separated lines
                 if err is True:
@@ -242,17 +303,17 @@ class AppleDL:
         else:
             self.log.debug('Terminating stdout output thread')
 
-    def run_cmd(self, cmd):
-        """
+    def __run_cmd(self, cmd):
+        '''
         Start external program and log stdout + stderr
-        """
+        '''
         cmd_str = ' '.join(cmd)
         self.log.info(f'Starting: {cmd_str}')
 
         p = subprocess.Popen(cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
         # start logging threads: one for stderr and one for stdout
-        t_out = threading.Thread(target=self.log_cmd, args=(p.stdout, False))
-        t_err = threading.Thread(target=self.log_cmd, args=(p.stderr, True))
+        t_out = threading.Thread(target=self.__log_cmd, args=(p.stdout, False))
+        t_err = threading.Thread(target=self.__log_cmd, args=(p.stderr, True))
 
         self.processes.append(p)
 
@@ -265,33 +326,10 @@ class AppleDL:
         t_out.start()
         t_err.start()
 
-    def device_connected(self):
-        """
-        return True if a device is available else retrun False
-        """
-        if self.udid is None:
-            returncode = subprocess.call(
-                ['ideviceinfo'], encoding='utf-8', stdout=subprocess.PIPE, stderr=subprocess.PIPE
-            )
-            if returncode == 0:
-                return True
-            else:
-                self.log.error('No device found')
-                return False
-        else:
-            returncode = subprocess.call(
-                ['ideviceinfo', '--udid', self.udid], encoding='utf-8', stdout=subprocess.PIPE, stderr=subprocess.PIPE
-            )
-            if returncode == 0:
-                return True
-            else:
-                self.log.error(f'Device {self.udid} not found')
-                return False
-
-    def is_installed(self, bundleId):
-        """
+    def __is_installed(self, bundleId):
+        '''
         return version code if app is installed else return False
-        """
+        '''
         try:
             out = self.installed_cached[0]
         except KeyError:
@@ -311,7 +349,7 @@ class AppleDL:
                 return version
         return False
 
-    def match_image(self, image_name, acceptable_value=0.9, max_try_times=1, scaleRation=1):
+    def __match_image(self, image_name, acceptable_value=0.9, max_try_times=1, scaleRation=1):
         '''
         get image from image_dir_device + image_name
 
@@ -340,10 +378,10 @@ class AppleDL:
                 self.log.debug(f'Match failed. Cannot find {image_name} on screen.')
                 return False
 
-    def tap(self, xy, message=''):
-        """
+    def __tap(self, xy, message=''):
+        '''
         Simulate touch input (single tap) and show toast message on device
-        """
+        '''
         x, y = xy
         self.log.debug(f'Tapping {xy} {message}')
         self.device.show_toast(toasttypes.TOAST_WARNING, f'{message} ({x},{y})', 1.5)
@@ -351,11 +389,11 @@ class AppleDL:
         time.sleep(0.1)
         self.device.touch(touchtypes.TOUCH_UP, 1, x, y)
 
-    def wake_up_device(self):
-        """
+    def __wake_up_device(self):
+        '''
         Normally not needed.
         Install (uiopen) wakes up device too
-        """
+        '''
         self.log.info('Unlocking device if not awake..')
         self.ssh_cmd('activator send libactivator.system.homebutton')
         time.sleep(0.5)
@@ -363,11 +401,15 @@ class AppleDL:
         time.sleep(0.5)
 
     def dump_fouldecrypt(self, target, output, timeout=120, disable_progress=False, copy=True):
-        """
+        '''
         Dump IPA by using FoulDecrypt
         When copy is False, the app directory on the device is overwritten which is faster than copying everything
         Return success
-        """
+        '''
+        if not self.init_ssh_done:
+            if not self.init_ssh():
+                return False
+
         self.log.debug(f'{target}: Start dumping with FoulDecrypt.')
 
         # get path of app
@@ -469,12 +511,13 @@ class AppleDL:
         dumpjs_path=os.path.join(os.path.dirname(ipadumper.__file__), 'dump.js'),
     ):
 
-        """
+        '''
         target: Bundle identifier of the target app
         output: Specify name of the decrypted IPA
         dumpjs_path:  path to dump.js
         timeout: timeout in for dump to finish
         disable_progress: disable progress bars
+        return success
 
 
         partly copied from
@@ -501,7 +544,14 @@ class AppleDL:
         LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
         OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
         SOFTWARE.
-        """
+        '''
+        if not self.init_ssh_done:
+            if not self.init_ssh():
+                return False
+        if not self.init_frida_done:
+            if not self.init_frida():
+                return False
+
         bar_fmt = '{desc:20.20} {percentage:3.0f}%|{bar:20}{r_bar}'
         temp_dir = tempfile.mkdtemp()
         self.log.debug(f'{target}: Start dumping with Frida. Temp dir: {temp_dir}')
@@ -536,10 +586,10 @@ class AppleDL:
                 self.log.error(f'{target}: {zip_args} {str(err)}')
 
         def on_message(message, data):
-            """
+            '''
             callback function for dump messages
             receives paths and copies them with scp
-            """
+            '''
             t = threading.currentThread()
             t.name = f'msg-{target}'
             try:
@@ -631,11 +681,11 @@ class AppleDL:
         return success
 
     def bulk_decrypt(self, itunes_ids, timeout_per_MiB=0.5, parallel=3, output_directory='ipa_output', country='us'):
-        """
+        '''
         Installs apps, decrypts and uninstalls them
         In parallel!
         itunes_ids: list of int with the iTunes IDs
-        """
+        '''
         if type(itunes_ids[0]) != int:
             self.log.error('bulk_decrypt: list of int needed')
             return False
@@ -659,7 +709,7 @@ class AppleDL:
                     self.log.warning(f'{bundleId}: Skipping, app is not for free ({price} {currency})')
                     continue
 
-                if self.is_installed(bundleId) is not False:
+                if self.__is_installed(bundleId) is not False:
                     self.log.info(f'{bundleId}: Skipping, app already installed')
                     total -= 1
                     # subprocess.check_output(['ideviceinstaller', '--uninstall', bundleId])
@@ -676,7 +726,7 @@ class AppleDL:
                 install_finished = False
                 to_download_size = 0
                 for app in wait_for_install:
-                    if self.is_installed(app['bundleId']) is not False:
+                    if self.__is_installed(app['bundleId']) is not False:
                         # dump app
 
                         self.log.info(
@@ -727,19 +777,24 @@ class AppleDL:
                         time.sleep(1)
 
     def install(self, itunes_id):
-        """
+        '''
         Opens app in appstore on device and simulates touch input to download and installs the app.
         If there is a cloud button then press that and done
         Else if there is a load button, press that and confirm with install button.
-        return True if successful or False at timeout
-        """
-
+        return success
+        '''
+        if not self.init_images_done:
+            if not self.init_images():
+                return False
+        if not self.init_zxtouch_done:
+            if not self.init_zxtouch():
+                return False
         # get rid of permission request popups
         while True:
-            dissallow_xy = self.match_image('dissallow.png')
+            dissallow_xy = self.__match_image('dissallow.png')
             if dissallow_xy is not False:
                 self.log.debug('Dissallow permission request')
-                self.tap(dissallow_xy, message='dissallow')
+                self.__tap(dissallow_xy, message='dissallow')
                 time.sleep(0.1)
             else:
                 break
@@ -751,17 +806,17 @@ class AppleDL:
         while dl_btn_wait_time <= self.timeout:
             dl_btn_wait_time += 1
             time.sleep(1)
-            dl_btn_xy = self.match_image('get.png')
+            dl_btn_xy = self.__match_image('get.png')
             if dl_btn_xy is False:
-                dl_btn_xy = self.match_image('cloud.png')
+                dl_btn_xy = self.__match_image('cloud.png')
                 if dl_btn_xy is False:
                     continue
                 else:
                     # tap and done
-                    self.tap(dl_btn_xy, 'cloud')
+                    self.__tap(dl_btn_xy, 'cloud')
                     return True
             else:
-                self.tap(dl_btn_xy, 'get')
+                self.__tap(dl_btn_xy, 'get')
                 break
 
         if dl_btn_wait_time > self.timeout:
@@ -769,15 +824,15 @@ class AppleDL:
             return False
 
         # tap and need to wait and confirm with install button
-        self.tap(dl_btn_xy, 'load')
+        self.__tap(dl_btn_xy, 'load')
         self.log.debug(f'ID {itunes_id}: Waiting for install button to appear')
         install_btn_wait_time = 0
         while install_btn_wait_time <= self.timeout:
             install_btn_wait_time += 1
             time.sleep(1)
-            install_btn_xy = self.match_image('install.png')
+            install_btn_xy = self.__match_image('install.png')
             if install_btn_xy is not False:
-                self.tap(install_btn_xy, 'install')
+                self.__tap(install_btn_xy, 'install')
                 return True
 
         self.log.warning(f'ID {itunes_id}: No install button found after {self.timeout}s')

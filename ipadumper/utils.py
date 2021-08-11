@@ -3,15 +3,16 @@ from datetime import datetime
 import logging
 import os
 import requests
+import socket
 
 # external
 import coloredlogs  # colored logs
 
 
 def itunes_info(itunes_id, log_level='info', country='us'):
-    """
+    '''
     return: trackName, trackId, version, bundleId, fileSizeMiB, price, currency
-    """
+    '''
     log = get_logger(log_level, name=__name__)
     log.debug('Get app info from itunes.apple.com')
     url = f'https://itunes.apple.com/{country}/search?limit=200&term={str(itunes_id)}&media=software'
@@ -41,13 +42,13 @@ def itunes_info(itunes_id, log_level='info', country='us'):
 
 
 def get_logger(log_level, name=__name__):
-    """
+    '''
     Colored logging
 
     :param log_level:  'warning', 'info', 'debug'
     :param name: logger name (use __name__ variable)
     :return: Logger
-    """
+    '''
 
     fmt = '%(asctime)s %(threadName)-16s %(levelname)-8s %(message)s'
     datefmt = '%Y-%m-%d %H:%M:%S'
@@ -88,9 +89,9 @@ def get_logger(log_level, name=__name__):
 
 
 def progress_helper(t):
-    """
+    '''
     returns progress function
-    """
+    '''
     last_sent = [0]
 
     def progress(filename, size, sent):
@@ -103,3 +104,15 @@ def progress_helper(t):
         return displayed
 
     return progress
+
+
+def free_port():
+    '''
+    Determines a free port using sockets.
+    '''
+    free_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    free_socket.bind(('0.0.0.0', 0))
+    free_socket.listen(5)
+    port = free_socket.getsockname()[1]
+    free_socket.close()
+    return port

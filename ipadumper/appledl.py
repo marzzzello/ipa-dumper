@@ -362,9 +362,10 @@ class AppleDL:
         self.ssh_cmd('activator send libactivator.system.homebutton')
         time.sleep(0.5)
 
-    def dump_fouldecrypt(self, target, output, timeout=120, disable_progress=False):
+    def dump_fouldecrypt(self, target, output, timeout=120, disable_progress=False, copy=True):
         """
         Dump IPA by using FoulDecrypt
+        When copy is False, the app directory on the device is overwritten which is faster than copying everything
         Return success
         """
         self.log.debug(f'{target}: Start dumping with FoulDecrypt.')
@@ -393,48 +394,70 @@ class AppleDL:
 
         app_bin = app_dir[:-4]
 
+        if copy is True:
+            orig_target_dir = target_dir
+            target_dir = target_dir + '_tmp'
+            cmd = f'cp -r {orig_target_dir} {target_dir}'
+            ret, stdout, stderr = self.ssh_cmd(cmd)
+            if ret != 0:
+                self.log.error(f'cp -r returned {ret} {stderr}')
+                return False
+
         bin_path = target_dir + '/' + app_dir + '/' + app_bin
 
         # decrypt binary and replace
+        self.log.debug(f'{target}: Decrypting binary with fouldecrypt')
         cmd = f'/usr/local/bin/fouldecrypt -v {bin_path} {bin_path}'
         ret, stdout, stderr = self.ssh_cmd(cmd)
         if ret != 0:
             self.log.error(f'fouldecrypt returned {ret} {stderr}')
             return False
 
-        # transfer app directory
+        # prepare for zipping, create Payload folder
+        cmd = f'mkdir {target_dir}/Payload'
+        ret, stdout, stderr = self.ssh_cmd(cmd)
+        if ret != 0:
+            self.log.error(f'mkdir returned {ret} {stderr}')
+            return False
+
+        cmd = f'mv {target_dir}/{app_dir} {target_dir}/Payload'
+        ret, stdout, stderr = self.ssh_cmd(cmd)
+        if ret != 0:
+            self.log.error(f'mv returned {ret} {stderr}')
+            return False
+
+        self.log.debug(f'{target}: Set access and modified date to 0 for reproducible zip files')
+        cmd = f'find {target_dir} -exec touch -m -d "1/1/1980" {{}} +'
+        ret, stdout, stderr = self.ssh_cmd(cmd)
+        if ret != 0:
+            self.log.error(f'find+touch returned {ret} {stderr}')
+            return False
+
+        # zip
+        self.log.debug(f'{target}: Creating zip')
+        cmd = f'cd {target_dir} && zip -qrX out.zip . -i "Payload/*"'
+        ret, stdout, stderr = self.ssh_cmd(cmd)
+        if ret != 0:
+            self.log.error(f'zip returned {ret} {stderr}')
+            return False
+
+        # transfer out.zip
         bar_fmt = '{desc:20.20} {percentage:3.0f}%|{bar:20}{r_bar}'
-        temp_dir = tempfile.mktemp()
-        self.log.debug(f'{target}: Start dumping. Temp dir: {temp_dir}')
+        self.log.debug(f'{target}: Start transfer. {output}')
 
         with tqdm(unit="B", unit_scale=True, miniters=1, bar_format=bar_fmt, disable=disable_progress) as t:
             pr = progress_helper(t)
             with SCPClient(self.sshclient.get_transport(), socket_timeout=self.timeout, progress=pr) as scp:
-                scp.get(target_dir + '/', os.path.join(temp_dir, ''), recursive=True)
+                scp.get(target_dir + '/out.zip', output)
 
-        # move app in Payload folder
-        tmp_payload_dir = os.path.join(temp_dir, 'Payload')
-        tmp_app_dir = os.path.join(temp_dir, app_dir)
-        os.mkdir(tmp_payload_dir)
-        shutil.move(tmp_app_dir, tmp_payload_dir)
+        if copy is True:
+            self.log.debug('Clean up temp directory on device')
+            cmd = f'rm -rf {target_dir}'
+            ret, stdout, stderr = self.ssh_cmd(cmd)
+            if ret != 0:
+                self.log.error(f'rm returned {ret} {stderr}')
+                return False
 
-        _, dirnames, filenames = next(os.walk(temp_dir))
-        self.log.debug(f'dirs: {dirnames} files: {filenames}')
-
-        self.log.debug(f'{target}: Set access and modified date to 0 for reproducible zip files')
-        for f in pathlib.Path(temp_dir).glob('**/*'):
-            os.utime(f, (0, 0))
-
-        # pack ipa
-        zip_args = ('zip', '-qrX', os.path.join(os.getcwd(), output), '.', '-i', 'Payload/*')
-        self.log.debug(f'{target}: Run zip: {zip_args}')
-        try:
-            subprocess.check_call(zip_args, cwd=temp_dir)
-        except subprocess.CalledProcessError as err:
-            self.log.error(f'{target}: {zip_args} {str(err)}')
-
-        self.log.debug(f'{target}: Dumping finished. Clean up temp dir {temp_dir}')
-        shutil.rmtree(temp_dir)
         return True
 
     def dump_frida(

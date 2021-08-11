@@ -21,8 +21,8 @@ Automatically install apps on a jailbroken device iOS device and generate decryp
 
 ### iOS device
 
-- Set device language to German and theme to dark or **alternativly** make a folder with images of the buttons of your language and theme
-- Disable password prompt for installing free apps under settings (Apple account -> Media & Purchases -> Password Settings).
+- Set device language to English or German or **alternativly** make a folder with images of the buttons of your language and theme. Take the existing folder as an [example](https://gitlab.com/marzzzello/ipa-dumper/-/tree/master/ipadumper/appstore_images) and use the `--imagedir` argument.
+- Disable password prompt for installing free apps under settings (Apple account -> Media & Purchases -> Password Settings)
 - Connect the device to your computer and make sure to accept the trust dialog
 - Install the following packages from Cydia:
   - OpenSSH
@@ -52,8 +52,8 @@ usage: ipadumper [-h] [-v {warning,info,debug}]
                  {help,usage,itunes_info,bulk_decrypt,dump,ssh_cmd,install}
                  ...
 
-Automatically install apps on a jailbroken device iOS device and generate a
-decrypted ipa packages
+Automatically install apps on a jailbroken device iOS device and generate
+decrypted IPAs
 
 positional arguments:
   {help,usage,itunes_info,bulk_decrypt,dump,ssh_cmd,install}

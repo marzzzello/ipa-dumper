@@ -92,6 +92,12 @@ def main():
         '--frida', help='Use Frida instead of FoulDecrypt (default: %(default)s)', action='store_true'
     )
     parser_dump.add_argument(
+        '--nocopy',
+        help='FoulDecrypt: decrypt and package inplace without copying '
+        + '(faster but app is broken afterwards) (default: %(default)s)',
+        action='store_true',
+    )
+    parser_dump.add_argument(
         '--timeout',
         help='Dump timeout (default: %(default)s)',
         type=float,
@@ -170,7 +176,7 @@ def main():
             if args.frida:
                 exitcode = a.dump_frida(args.bundleID, args.output, args.timeout)
             else:
-                exitcode = a.dump_fouldecrypt(args.bundleID, args.output, args.timeout)
+                exitcode = a.dump_fouldecrypt(args.bundleID, args.output, args.timeout, copy=not args.nocopy)
         elif args.command == 'ssh_cmd':
             exitcode, stdout, stderr = a.ssh_cmd(args.cmd)
             print(stdout)

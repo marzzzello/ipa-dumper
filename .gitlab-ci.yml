@@ -1,8 +1,4 @@
-include:
-  - template: Security/SAST.gitlab-ci.yml
-
 stages:
-  - test
   - release
 
 pypi_upload:

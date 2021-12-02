@@ -401,6 +401,12 @@ class AppleDL:
         self.ssh_cmd('activator send libactivator.system.homebutton')
         time.sleep(0.5)
 
+    def already_dumped(self, itunes_id, directory):
+        for filename in os.listdir(f'{directory}/.'):
+            if filename.startswith(f'{itunes_id}_'):
+                return True
+        return False
+
     def dump_fouldecrypt(self, target, output, timeout=120, disable_progress=False, copy=True):
         '''
         Dump IPA by using FoulDecrypt
@@ -701,6 +707,10 @@ class AppleDL:
                 self.log.info(f'Installing, len: {len(wait_for_install)}')
 
                 itunes_id = itunes_ids.pop()
+                if self.already_dumped(itunes_id, output_directory):
+                    self.log.warning(f'{itunes_id}: Skipping, app is already dumped.')
+                    continue
+
                 trackName, version, bundleId, fileSizeMiB, price, currency = itunes_info(
                     itunes_id, log_level=self.log_level, country=country
                 )

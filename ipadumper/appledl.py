@@ -469,14 +469,14 @@ class AppleDL:
             self.log.error(f'mkdir returned {ret} {stderr}')
             return False
 
-        cmd = f'mv {target_dir}/{app_dir} {target_dir}/Payload'
+        cmd = f'mv "{target_dir}/{app_dir}" "{target_dir}/Payload"'
         ret, stdout, stderr = self.ssh_cmd(cmd)
         if ret != 0:
             self.log.error(f'mv returned {ret} {stderr}')
             return False
 
         self.log.debug(f'{target}: Set access and modified date to 0 for reproducible zip files')
-        cmd = f'find {target_dir} -exec touch -m -d "1/1/1980" {{}} +'
+        cmd = f'find "{target_dir}" -exec touch -m -d "1/1/1980" {{}} +'
         ret, stdout, stderr = self.ssh_cmd(cmd)
         if ret != 0:
             self.log.error(f'find+touch returned {ret} {stderr}')
@@ -484,7 +484,7 @@ class AppleDL:
 
         # zip
         self.log.debug(f'{target}: Creating zip')
-        cmd = f'cd {target_dir} && zip -qrX out.zip . -i "Payload/*"'
+        cmd = f'cd "{target_dir}" && zip -qrX out.zip . -i "Payload/*"'
         ret, stdout, stderr = self.ssh_cmd(cmd)
         if ret != 0:
             self.log.error(f'zip returned {ret} {stderr}')
@@ -501,7 +501,7 @@ class AppleDL:
 
         if copy is True:
             self.log.debug('Clean up temp directory on device')
-            cmd = f'rm -rf {target_dir}'
+            cmd = f'rm -rf "{target_dir}"'
             ret, stdout, stderr = self.ssh_cmd(cmd)
             if ret != 0:
                 self.log.error(f'rm returned {ret} {stderr}')

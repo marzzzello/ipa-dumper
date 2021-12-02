@@ -714,6 +714,11 @@ class AppleDL:
                 trackName, version, bundleId, fileSizeMiB, price, currency = itunes_info(
                     itunes_id, log_level=self.log_level, country=country
                 )
+
+                if not bundleId:
+                    self.log.warning(f'{itunes_id}: Skipping, app not found.')
+                    continue
+
                 app = {'bundleId': bundleId, 'fileSizeMiB': fileSizeMiB, 'itunes_id': itunes_id, 'version': version}
 
                 if price != 0:

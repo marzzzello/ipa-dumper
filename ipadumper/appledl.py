@@ -200,6 +200,7 @@ class AppleDL:
         else:
             self.__run_cmd(['iproxy', '--udid', self.udid, str(self.local_zxtouch_port), '6000'])
 
+        time.sleep(1)
         self.log.info(f'Connecting to device at {self.device_address}:{self.local_zxtouch_port}')
         try:
             self.device = zxtouch(self.device_address, port=self.local_zxtouch_port)

@@ -200,6 +200,7 @@ class AppleDL:
         else:
             self.__run_cmd(['iproxy', '--udid', self.udid, str(self.local_zxtouch_port), '6000'])
 
+        time.sleep(1)
         self.log.info(f'Connecting to device at {self.device_address}:{self.local_zxtouch_port}')
         try:
             self.device = zxtouch(self.device_address, port=self.local_zxtouch_port)
@@ -400,6 +401,12 @@ class AppleDL:
         self.ssh_cmd('activator send libactivator.system.homebutton')
         time.sleep(0.5)
 
+    def already_dumped(self, itunes_id, directory):
+        for filename in os.listdir(f'{directory}/.'):
+            if filename.startswith(f'{itunes_id}_'):
+                return True
+        return False
+
     def dump_fouldecrypt(self, target, output, timeout=120, disable_progress=False, copy=True):
         '''
         Dump IPA by using FoulDecrypt
@@ -462,14 +469,14 @@ class AppleDL:
             self.log.error(f'mkdir returned {ret} {stderr}')
             return False
 
-        cmd = f'mv {target_dir}/{app_dir} {target_dir}/Payload'
+        cmd = f'mv "{target_dir}/{app_dir}" "{target_dir}/Payload"'
         ret, stdout, stderr = self.ssh_cmd(cmd)
         if ret != 0:
             self.log.error(f'mv returned {ret} {stderr}')
             return False
 
         self.log.debug(f'{target}: Set access and modified date to 0 for reproducible zip files')
-        cmd = f'find {target_dir} -exec touch -m -d "1/1/1980" {{}} +'
+        cmd = f'find "{target_dir}" -exec touch -m -d "1/1/1980" {{}} +'
         ret, stdout, stderr = self.ssh_cmd(cmd)
         if ret != 0:
             self.log.error(f'find+touch returned {ret} {stderr}')
@@ -477,7 +484,7 @@ class AppleDL:
 
         # zip
         self.log.debug(f'{target}: Creating zip')
-        cmd = f'cd {target_dir} && zip -qrX out.zip . -i "Payload/*"'
+        cmd = f'cd "{target_dir}" && zip -qrX out.zip . -i "Payload/*"'
         ret, stdout, stderr = self.ssh_cmd(cmd)
         if ret != 0:
             self.log.error(f'zip returned {ret} {stderr}')
@@ -494,7 +501,7 @@ class AppleDL:
 
         if copy is True:
             self.log.debug('Clean up temp directory on device')
-            cmd = f'rm -rf {target_dir}'
+            cmd = f'rm -rf "{target_dir}"'
             ret, stdout, stderr = self.ssh_cmd(cmd)
             if ret != 0:
                 self.log.error(f'rm returned {ret} {stderr}')
@@ -700,9 +707,18 @@ class AppleDL:
                 self.log.info(f'Installing, len: {len(wait_for_install)}')
 
                 itunes_id = itunes_ids.pop()
+                if self.already_dumped(itunes_id, output_directory):
+                    self.log.warning(f'{itunes_id}: Skipping, app is already dumped.')
+                    continue
+
                 trackName, version, bundleId, fileSizeMiB, price, currency = itunes_info(
                     itunes_id, log_level=self.log_level, country=country
                 )
+
+                if not bundleId:
+                    self.log.warning(f'{itunes_id}: Skipping, app not found.')
+                    continue
+
                 app = {'bundleId': bundleId, 'fileSizeMiB': fileSizeMiB, 'itunes_id': itunes_id, 'version': version}
 
                 if price != 0:
@@ -783,6 +799,9 @@ class AppleDL:
         Else if there is a load button, press that and confirm with install button.
         return success
         '''
+        if not self.init_ssh_done:
+            if not self.init_ssh():
+                return 1, '', ''
         if not self.init_images_done:
             if not self.init_images():
                 return False

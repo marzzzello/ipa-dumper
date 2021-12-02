@@ -14,8 +14,8 @@ Automatically install apps on a jailbroken device iOS device and generate decryp
 
 ## Requirements
 
-- Linux device (tested on Arch Linux) with Python 3.7+
-- Jailbroken iOS device (tested on iPhone 6s, iOS 14.2)
+- Linux/macOS device (tested on Arch Linux and macOS 12) with Python 3.7+
+- Jailbroken iOS device (tested on [iPhone 6s, iOS 14.2, iPhone 6, iOS 12.5.4 and iPhone Xʀ iOS 14.5])
 
 ## Setup
 
@@ -32,7 +32,7 @@ Automatically install apps on a jailbroken device iOS device and generate decryp
   - NoAppThinning from https://n3d1117.github.io
   - ZXTouch from https://zxtouch.net
 
-### Linux device
+### Linux/macOS device
 
 - connect to iOS device via USB
 - Setup OpenSSH (needs to work with keyfile):
@@ -42,6 +42,7 @@ Automatically install apps on a jailbroken device iOS device and generate decryp
   - run `ssh-copy-id -p 22222 -i iphone root@localhost` (default password is `alpine`)
 
 - Install [ideviceinstaller](https://github.com/libimobiledevice/ideviceinstaller) (this should also install iproxy/libusbmuxd as requirement)
+  - On macOS install using brew `brew install libusbmuxd` and `brew install libimobiledevice`
 - Install ipadumper with `pip install ipa_dumper`
 - Run `ipadumper help`
 

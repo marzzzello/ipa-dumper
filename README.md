@@ -43,7 +43,7 @@ Automatically install apps on a jailbroken device iOS device and generate decryp
 
 - Install [ideviceinstaller](https://github.com/libimobiledevice/ideviceinstaller) (this should also install iproxy/libusbmuxd as requirement)
   - On macOS install using brew `brew install libusbmuxd` and `brew install libimobiledevice`
-- Install ipadumper with `pip install ipa_dumper`
+- Install ipadumper with `pip install ipadumper`
 - Run `ipadumper help`
 
 ## Usage

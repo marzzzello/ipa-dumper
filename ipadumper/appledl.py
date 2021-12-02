@@ -799,6 +799,9 @@ class AppleDL:
         Else if there is a load button, press that and confirm with install button.
         return success
         '''
+        if not self.init_ssh_done:
+            if not self.init_ssh():
+                return 1, '', ''
         if not self.init_images_done:
             if not self.init_images():
                 return False

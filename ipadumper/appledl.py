@@ -114,6 +114,7 @@ class AppleDL:
         '''
         return success
         '''
+        self.log.debug('Starting initialization')
         if not self.init_frida() or not self.init_ssh() or not self.init_zxtouch or not self.init_images():
             return False
         return True
@@ -146,6 +147,7 @@ class AppleDL:
         set frida device
         return success
         '''
+        self.log.debug('Setting frida device')
         try:
             if self.udid is None:
                 self.frida_device = frida.get_usb_device()
@@ -163,6 +165,7 @@ class AppleDL:
         Initializing SSH connection to device
         return success
         '''
+        self.log.debug('Initializing SSH connection to device')
         # start iproxy for SSH
         if self.local_ssh_port == 0:
             self.local_ssh_port = free_port()
@@ -192,6 +195,7 @@ class AppleDL:
         return True
 
     def init_zxtouch(self):
+        self.log.debug('initialization zxtouch')
         # start iproxy for zxtouch
         if self.local_zxtouch_port == 0:
             self.local_zxtouch_port = free_port()
@@ -217,6 +221,7 @@ class AppleDL:
         Copy template images from local folder to device
         return success
         '''
+        self.log.debug('Copy template images from local folder to device')
 
         # check directory structure
         try:

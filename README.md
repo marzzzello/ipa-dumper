@@ -37,7 +37,7 @@ Automatically install apps on a jailbroken device iOS device and generate decryp
 - connect to iOS device via USB
 - Setup OpenSSH (needs to work with keyfile):
 
-  - run `ssh-keygen -t ed25519 -f iphone`
+  - run `ssh-keygen -t ed25519 -f iphone` (don't use a passphrase)
   - run `iproxy 22222 22` (Run this background/another terminal session)
   - run `ssh-copy-id -p 22222 -i iphone root@localhost` (default password is `alpine`)
 

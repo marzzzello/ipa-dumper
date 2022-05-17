@@ -187,8 +187,9 @@ class AppleDL:
         except FileNotFoundError:
             self.log.error(f'Could not find ssh keyfile "{self.ssh_key_filename}"')
             return False
-        except (EOFError, ConnectionResetError, paramiko.ssh_exception.SSHException):
+        except (EOFError, ConnectionResetError, paramiko.ssh_exception.SSHException) as e:
             self.log.error('Could not connect to establish SSH connection')
+            self.log.debug(str(e))
             return False
 
         self.init_ssh_done = True
